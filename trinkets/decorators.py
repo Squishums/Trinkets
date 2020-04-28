@@ -4,8 +4,51 @@ Contains decorators which apply to standard methods.
 
 ############################################################################### imports
 import inspect
+import functools
 
 import trinkets.log
+
+
+############################################################################### utils
+def _allow_no_args_call(deco):
+  """
+  Decorates a decorator to allow it to be called either with or without arguments.
+
+  The decorated decorator should take the method its wrapping as the first
+  parameter, followed by any decorator parameters.
+
+  Example:
+    Creating an annotation which hides exceptions and can provide an optional
+    return value.
+
+      @_allow_no_args_call
+      def no_exceptions(fn, *, default_return=None):
+        def wrapped(*args, **kwargs):
+          try:
+            fn(*args, **kwargs)
+          except Exception:
+            return default_return
+
+      @no_exceptions
+      def some_method(...):  # Exceptions return None
+        ...
+
+      @no_exceptions(default_return='uh oh!')
+      def some_method(...):  # Exceptions return 'uh oh!'
+        ...
+
+  """
+  @functools.wraps(deco)
+  def wrapped(*args, **kwargs):
+    if (len(args) == 1 and len(kwargs == 0) and callable(args[0])):
+      # Signature matches what we'd recieve if deco was called without
+      # arguments. It's possible this is incorrect, if it was passed a single
+      # callable as an argument.
+      return deco(args[0])
+    else:
+      # Decorated decorator was passed arguments. Forward them.
+      return lambda deco_inner: deco(deco_inner, *args, **kwargs)
+  return wrapped
 
 
 ###############################################################################
@@ -17,7 +60,7 @@ def overrides(interface_class):
   class hierarchy of interface_class.
 
   Args:
-    interface_class: (class) base class with the method definition
+    interface_class (class): base class with the method definition
 
   Raises:
     TypeError: if the decorated method is not present in the interface_class
@@ -28,7 +71,7 @@ def overrides(interface_class):
   # TODO: Ensure interface_class is a subclass of the passed method, or
   #       inspect base classes of interface_class directly
 
-  def decorator(method):
+  def wrapped(method):
     # Check that the method exists in the interface
     method_name = method.__name__
     qualified_method_name = f'{interface_class.__name__}.{method.__name__}'
@@ -39,7 +82,7 @@ def overrides(interface_class):
     except AttributeError:
       raise TypeError(f'Method {qualified_method_name} not found.')
     return method
-  return decorator
+  return wrapped
 
 
 ############################################################################### builder
@@ -73,13 +116,22 @@ def builder(cls):
   return cls
 
 
-if __name__ == '__main__':
-  @builder
-  class Test:
-    def __init__(self, a):
-      print(a)
+############################################################################### retries
+@_allow_no_args_call
+def retries(
+    func,
+    *,
+    return_filter=None,
+    exception_filter=None,
+    attempt_filter=None,
+    delay_strategy=None):
+  """
+  Decorates a method to retry failed execution attempts.
 
-  (Test.builder()
-    .with_a(3)
-    .build())
+  When no arguments are passed, retries
+  """
+  @functools.wraps(func)
+  def wrapped(*args, **kwargs):
 
+    return func(*args, **kwargs)
+  return wrapped
